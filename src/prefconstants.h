@@ -38,6 +38,18 @@ const static int WINDOW_X = 0;
 const static int WINDOW_Y = 0;
 const static int WINDOW_WIDTH = 700;
 const static int WINDOW_HEIGHT = 200;
+
+// Learning mode
+const static bool LEARNING_MODE_ENABLED = true;
+const static int LEARNING_THINK_TIME = 2;   // seconds before hint
+const static int LEARNING_AUTO_HIDE_DELAY = 0; // 0 = stay visible
+
+// Vocabulary / inline highlights
+const static bool INLINE_HIGHLIGHTS_ENABLED = true;
+const static double VOCAB_PANEL_OPACITY = 0.92;
+
+// Translation subtitle font
+const QString TRANSLATION_FONT = "Noto Sans,16,-1,5,50,0,0,0,0,0";
 } // namespace PrefConstants
 
 #endif // PREFCONSTANTS_H

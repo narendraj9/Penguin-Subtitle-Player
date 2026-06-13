@@ -4,7 +4,7 @@
 #
 #-------------------------------------------------
 
-QT       += core gui
+QT       += core gui network
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -30,6 +30,7 @@ SOURCES += \
     src/uchardet/src/LangModels/LangLatvianModel.cpp \
     src/uchardet/src/LangModels/LangLithuanianModel.cpp \
     src/uchardet/src/LangModels/LangMalteseModel.cpp \
+    src/uchardet/src/LangModels/LangNorwegianModel.cpp \
     src/uchardet/src/LangModels/LangPolishModel.cpp \
     src/uchardet/src/LangModels/LangPortugueseModel.cpp \
     src/uchardet/src/LangModels/LangRomanianModel.cpp \
@@ -104,7 +105,11 @@ SOURCES += \
     src/parsers/webvttparser.cpp \
     src/parser.cpp \
     src/engine.cpp \
-    src/nccdialog.cpp
+    src/nccdialog.cpp \
+    src/vocabstore.cpp \
+    src/learningmode.cpp \
+    src/vocabpanel.cpp \
+    src/helpdialog.cpp
 
 HEADERS += \
     src/configdialog.h \
@@ -120,7 +125,12 @@ HEADERS += \
     src/parserinterface.h \
     src/parser.h \
     src/engine.h \
-    src/nccdialog.h
+    src/nccdialog.h \
+    src/vocabword.h \
+    src/vocabstore.h \
+    src/learningmode.h \
+    src/vocabpanel.h \
+    src/helpdialog.h
 
 FORMS    += \
     resource/ui/mainwindow.ui
@@ -156,7 +166,9 @@ test { # the following files will be included for Unit test build
     src/test/parsers/testsrtparser.h \
     src/test/parsers/testwebvttparser.h \
     src/test/testengine.h \
-    src/test/parsers/parsertests.h
+    src/test/parsers/parsertests.h \
+    src/test/testvocabstore.h \
+    src/test/testlearningmode.h
 
     SOURCES += \
     src/test/parsers/testssaparser.cpp \
@@ -165,7 +177,9 @@ test { # the following files will be included for Unit test build
     src/test/parsers/testsrtparser.cpp \
     src/test/parsers/testwebvttparser.cpp \
     src/test/testengine.cpp \
-    src/test/parsers/parsertests.cpp
+    src/test/parsers/parsertests.cpp \
+    src/test/testvocabstore.cpp \
+    src/test/testlearningmode.cpp
 } else {
     message(Normal build) #we will just show this message for Debug/Release build
 }

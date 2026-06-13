@@ -474,3 +474,140 @@ AboutPage::~AboutPage() {}
 
 void AboutPage::load() {}
 void AboutPage::save() {}
+
+// ---------- LearningPage ----------
+
+LearningPage::LearningPage(QWidget *parent, ConfigDialog *configDialog)
+    : PrefPage(parent, configDialog) {
+
+    QGroupBox *modeGroup = new QGroupBox(tr("Learning Mode"));
+
+    learningModeCbx = new QCheckBox(tr("Enable learning mode (hide translation until T is pressed)"));
+
+    QLabel *thinkTimeLabel = new QLabel(tr("Think time before hint (seconds, 0 = immediate):"));
+    thinkTimeSpinBox = new QSpinBox();
+    thinkTimeSpinBox->setRange(0, 60);
+    thinkTimeSpinBox->setSuffix(tr(" s"));
+
+    QLabel *autoHideLabel = new QLabel(tr("Auto-hide translation after reveal (seconds, 0 = stay visible):"));
+    autoHideDelaySpinBox = new QSpinBox();
+    autoHideDelaySpinBox->setRange(0, 120);
+    autoHideDelaySpinBox->setSuffix(tr(" s"));
+
+    QVBoxLayout *modeLayout = new QVBoxLayout();
+    modeLayout->addWidget(learningModeCbx);
+    QHBoxLayout *thinkRow = new QHBoxLayout();
+    thinkRow->addWidget(thinkTimeLabel);
+    thinkRow->addWidget(thinkTimeSpinBox);
+    thinkRow->addStretch(1);
+    modeLayout->addLayout(thinkRow);
+    QHBoxLayout *hideRow = new QHBoxLayout();
+    hideRow->addWidget(autoHideLabel);
+    hideRow->addWidget(autoHideDelaySpinBox);
+    hideRow->addStretch(1);
+    modeLayout->addLayout(hideRow);
+    modeGroup->setLayout(modeLayout);
+
+    QGroupBox *vocabGroup = new QGroupBox(tr("Vocabulary Highlights"));
+
+    inlineHighlightsCbx = new QCheckBox(tr("Show inline word highlights and colour legend"));
+
+    QLabel *vocabFileLabel = new QLabel(tr("Vocabulary file (vocab.json):"));
+    vocabFileEdit = new QLineEdit();
+    vocabFileEdit->setPlaceholderText(tr("Path to vocab.json …"));
+    QPushButton *browseBtn = new QPushButton(tr("Browse"));
+    connect(browseBtn, SIGNAL(clicked()), this, SLOT(browseVocabFile()));
+
+    QHBoxLayout *fileRow = new QHBoxLayout();
+    fileRow->addWidget(vocabFileEdit, 1);
+    fileRow->addWidget(browseBtn);
+
+    QVBoxLayout *vocabLayout = new QVBoxLayout();
+    vocabLayout->addWidget(inlineHighlightsCbx);
+    vocabLayout->addWidget(vocabFileLabel);
+    vocabLayout->addLayout(fileRow);
+    vocabGroup->setLayout(vocabLayout);
+
+    QGroupBox *apiGroup = new QGroupBox(tr("Vocabulary Extraction API (optional)"));
+
+    QLabel *providerLabel = new QLabel(tr("Provider:"));
+    apiProviderCombo = new QComboBox();
+    apiProviderCombo->addItem("Groq (llama-3.3-70b)");
+    apiProviderCombo->addItem("Cerebras (gpt-oss-120b)");
+
+    QLabel *keyLabel = new QLabel(tr("API key:"));
+    apiKeyEdit = new QLineEdit();
+    apiKeyEdit->setEchoMode(QLineEdit::Password);
+    apiKeyEdit->setPlaceholderText(tr("Paste your API key here"));
+
+    QLabel *hintLabel = new QLabel(
+        tr("With an API key configured, the vocabulary panel can\n"
+           "auto-extract B1-level German words from the current subtitle.\n"
+           "Get a free key at console.groq.com or cloud.cerebras.ai"));
+    hintLabel->setStyleSheet("color: #777777; font-size: 11px;");
+
+    QVBoxLayout *apiLayout = new QVBoxLayout();
+    QHBoxLayout *provRow = new QHBoxLayout();
+    provRow->addWidget(providerLabel);
+    provRow->addWidget(apiProviderCombo);
+    provRow->addStretch(1);
+    apiLayout->addLayout(provRow);
+    QHBoxLayout *keyRow = new QHBoxLayout();
+    keyRow->addWidget(keyLabel);
+    keyRow->addWidget(apiKeyEdit, 1);
+    apiLayout->addLayout(keyRow);
+    apiLayout->addWidget(hintLabel);
+    apiGroup->setLayout(apiLayout);
+
+    QVBoxLayout *mainLayout = new QVBoxLayout();
+    mainLayout->addWidget(modeGroup);
+    mainLayout->addWidget(vocabGroup);
+    mainLayout->addWidget(apiGroup);
+    mainLayout->addStretch(1);
+    setLayout(mainLayout);
+
+    this->load();
+}
+
+void LearningPage::load() {
+    learningModeCbx->setChecked(
+        settings.value("learning/enabled",
+                       QVariant::fromValue(PrefConstants::LEARNING_MODE_ENABLED))
+            .toBool());
+    thinkTimeSpinBox->setValue(
+        settings.value("learning/thinkTime",
+                       QVariant::fromValue(PrefConstants::LEARNING_THINK_TIME))
+            .toInt());
+    autoHideDelaySpinBox->setValue(
+        settings
+            .value("learning/autoHideDelay",
+                   QVariant::fromValue(PrefConstants::LEARNING_AUTO_HIDE_DELAY))
+            .toInt());
+    inlineHighlightsCbx->setChecked(
+        settings
+            .value("learning/inlineHighlights",
+                   QVariant::fromValue(PrefConstants::INLINE_HIGHLIGHTS_ENABLED))
+            .toBool());
+    vocabFileEdit->setText(settings.value("learning/vocabFile").toString());
+    apiProviderCombo->setCurrentIndex(
+        settings.value("learning/apiProvider", 0).toInt());
+    apiKeyEdit->setText(settings.value("learning/apiKey").toString());
+}
+
+void LearningPage::save() {
+    settings.setValue("learning/enabled", learningModeCbx->isChecked());
+    settings.setValue("learning/thinkTime", thinkTimeSpinBox->value());
+    settings.setValue("learning/autoHideDelay", autoHideDelaySpinBox->value());
+    settings.setValue("learning/inlineHighlights", inlineHighlightsCbx->isChecked());
+    settings.setValue("learning/vocabFile", vocabFileEdit->text());
+    settings.setValue("learning/apiProvider", apiProviderCombo->currentIndex());
+    settings.setValue("learning/apiKey", apiKeyEdit->text());
+}
+
+void LearningPage::browseVocabFile() {
+    QString path = QFileDialog::getOpenFileName(
+        this, tr("Select Vocabulary File"), "",
+        tr("JSON files (*.json);;All files (*)"));
+    if (!path.isEmpty())
+        vocabFileEdit->setText(path);
+}

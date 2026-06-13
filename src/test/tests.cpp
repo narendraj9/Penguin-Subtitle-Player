@@ -3,6 +3,8 @@
 #include "parsers/testssaparser.h"
 #include "parsers/testwebvttparser.h"
 #include "testengine.h"
+#include "testlearningmode.h"
+#include "testvocabstore.h"
 
 Tests::Tests() {}
 
@@ -18,4 +20,10 @@ void Tests::run() {
 
   TestEngine testEngine;
   QTest::qExec(&testEngine);
+
+  TestVocabStore testVocabStore;
+  QTest::qExec(&testVocabStore);
+
+  TestLearningMode testLearningMode;
+  QTest::qExec(&testLearningMode);
 }

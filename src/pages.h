@@ -79,4 +79,24 @@ public:
   void save();
 };
 
+class LearningPage : public PrefPage {
+  Q_OBJECT
+public:
+  LearningPage(QWidget *parent = 0, ConfigDialog *configDialog = 0);
+  void load();
+  void save();
+
+public slots:
+  void browseVocabFile();
+
+private:
+  QCheckBox *learningModeCbx;
+  QSpinBox *thinkTimeSpinBox;
+  QSpinBox *autoHideDelaySpinBox;
+  QCheckBox *inlineHighlightsCbx;
+  QLineEdit *vocabFileEdit;
+  QComboBox *apiProviderCombo;
+  QLineEdit *apiKeyEdit;
+};
+
 #endif
