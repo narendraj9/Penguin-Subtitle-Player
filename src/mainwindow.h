@@ -23,6 +23,7 @@ public:
     explicit MainWindow(QWidget *parent = 0);
     ~MainWindow();
     void load(QString path);
+    void setPlay(bool play);
 
 public slots:
     void update();
@@ -66,7 +67,6 @@ private:
     void loadPref();
     void setup();
     void enableControls();
-    void setPlay(bool play);
     QString getSubtitle(bool sliderMoved);
     QString getEncoding(QString preset);
     QString promptForEncoding(QStringList codecNames, int recommendIndex);
@@ -111,6 +111,8 @@ private:
     QTimer *m_ctrlXTimer = nullptr;
 
     QString m_lastSubtitleText;
+
+    friend class TestMainWindow;
 };
 
 #endif // MAINWINDOW_H

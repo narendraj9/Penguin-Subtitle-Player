@@ -4,6 +4,7 @@
 #include "parsers/testwebvttparser.h"
 #include "testengine.h"
 #include "testlearningmode.h"
+#include "testmainwindow.h"
 #include "testvocabstore.h"
 
 Tests::Tests() {}
@@ -26,4 +27,7 @@ void Tests::run() {
 
   TestLearningMode testLearningMode;
   QTest::qExec(&testLearningMode);
+
+  TestMainWindow testMainWindow;
+  QTest::qExec(&testMainWindow);
 }

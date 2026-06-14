@@ -933,7 +933,7 @@ void MainWindow::updateTranslationDisplay() {
         return;
     }
 
-    QString translation = translationEngine->currentSubtitle(currentTime, false);
+    QString translation = translationEngine->currentSubtitle(currentTime, true);
 
     if (!m_learningModeEnabled) {
         // Passive mode: always show
