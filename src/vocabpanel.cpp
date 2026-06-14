@@ -10,9 +10,11 @@
 #include <QPushButton>
 #include <QSaveFile>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QSizeGrip>
 #include <QStyleOption>
 #include <QTextStream>
+#include <QTimer>
 #include <QVector>
 
 VocabPanel::VocabPanel(VocabStore *store, QWidget *parent)
@@ -143,6 +145,14 @@ void VocabPanel::adjustOpacity(double delta) {
 void VocabPanel::refresh() {
     clearGroups();
     buildGroups();
+    // Scroll to active group after layout settles
+    if (m_firstActiveWidget) {
+        QWidget *target = m_firstActiveWidget;
+        QTimer::singleShot(0, [this, target]() {
+            m_scroll->ensureWidgetVisible(target, 0, 12);
+        });
+        m_firstActiveWidget = nullptr;
+    }
 }
 
 void VocabPanel::clearGroups() {
@@ -217,6 +227,7 @@ void VocabPanel::buildGroups() {
         if (!ordered.contains(s))
             ordered.append(s);
 
+    m_firstActiveWidget = nullptr;
     int insertPos = 0;
     for (const QString &sentence : ordered) {
         if (!groups.contains(sentence))
@@ -226,6 +237,8 @@ void VocabPanel::buildGroups() {
         QWidget *grp =
             buildGroupWidget(sentence, groups[sentence], active, recent);
         m_contentLayout->insertWidget(insertPos++, grp);
+        if (active && !m_firstActiveWidget)
+            m_firstActiveWidget = grp;
     }
 }
 

@@ -46,6 +46,7 @@ private:
 
     QString m_currentSubtitle;
     QStringList m_recentSubtitles;
+    QWidget *m_firstActiveWidget = nullptr;
 
     bool m_dragging = false;
     QPoint m_dragOffset;

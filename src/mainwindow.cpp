@@ -229,6 +229,7 @@ void MainWindow::update() {
     ui->subtitleLabel->setText(subtitleHtml);
     updateHighlights(subtitleHtml);
     updateLegend(subtitleHtml);
+    updateTranslationDisplay();
 
     if (vocabPanel && vocabPanel->isVisible())
         vocabPanel->setCurrentSubtitle(m_lastSubtitleText);
@@ -247,6 +248,7 @@ void MainWindow::sliderMoved(int val) {
         subtitleHtml = applyVocabHighlights(subtitleHtml);
     ui->subtitleLabel->setText(subtitleHtml);
     updateLegend(subtitleHtml);
+    updateTranslationDisplay();
     ui->timeLabel->setText(Engine::millisToTimeString(currentTime) + " / " +
                            Engine::millisToTimeString(engine->getFinishTime()));
 }
@@ -384,16 +386,24 @@ void MainWindow::toggleLearningMode() {
     updateTranslationDisplay();
 
     // Brief toast-like update of hint
-    QString label = m_learningModeEnabled ? "Learning Mode ON  (C-x l to disable)"
-                                          : "Passive Mode ON  (C-x l to enable)";
-    ui->hintLabel->setText(label);
+    QString modeText = m_learningModeEnabled
+        ? "<span style='color:#6BCB77;'>⟳ Learning Mode ON</span>"
+          "<span style='color:rgba(160,160,160,160);'>  (C-x l to disable)</span>"
+        : "<span style='color:#4D96FF;'>◎ Passive Mode ON</span>"
+          "<span style='color:rgba(160,160,160,160);'>  (C-x l to enable learning)</span>";
+    ui->hintLabel->setText(modeText);
     ui->hintLabel->setVisible(true);
     QTimer::singleShot(2500, [this]() {
-        ui->hintLabel->setVisible(
-            learningMode &&
-            learningMode->state() == LearningMode::HintShowing);
-        if (!ui->hintLabel->isVisible())
-            ui->hintLabel->setText("▸ press T to check");
+        bool keepHint = learningMode &&
+                        learningMode->state() == LearningMode::HintShowing;
+        if (keepHint) {
+            ui->hintLabel->setText(
+                "<span style='color:rgba(180,180,180,180);'>▸ click here or press&nbsp;</span>"
+                "<span style='color:#FFD93D;font-weight:bold;'>T</span>"
+                "<span style='color:rgba(180,180,180,180);'>&nbsp;to reveal translation</span>");
+        } else {
+            ui->hintLabel->setVisible(false);
+        }
     });
 }
 
@@ -425,6 +435,24 @@ void MainWindow::loadTranslationFile() {
             QString encoding = getEncoding(chardet);
             delete translationEngine;
             translationEngine = new Engine(path, encoding);
+            // Brief success toast
+            this->show();
+            ui->hintLabel->setText(
+                "<span style='color:#6BCB77;'>✓ Translation subtitle loaded</span>");
+            ui->hintLabel->setVisible(true);
+            QTimer::singleShot(2000, [this]() {
+                bool keepHint = learningMode &&
+                                learningMode->state() == LearningMode::HintShowing;
+                if (keepHint) {
+                    ui->hintLabel->setText(
+                        "<span style='color:rgba(180,180,180,180);'>▸ click here or press&nbsp;</span>"
+                        "<span style='color:#FFD93D;font-weight:bold;'>T</span>"
+                        "<span style='color:rgba(180,180,180,180);'>&nbsp;to reveal translation</span>");
+                } else {
+                    ui->hintLabel->setVisible(false);
+                }
+            });
+            return;
         } catch (const std::exception &e) {
             QMessageBox::critical(nullptr, "Error loading translation",
                                   e.what(), QMessageBox::Ok);
@@ -654,6 +682,11 @@ void MainWindow::loadPref() {
         settings.value("appearance/font", PrefConstants::FONT).toString());
     ui->subtitleLabel->setFont(f);
 
+    // Translation label at ~65% of subtitle font size (minimum 11pt)
+    QFont tf = f;
+    tf.setPointSize(qMax(11, (int)(f.pointSize() * 0.65)));
+    ui->translationLabel->setFont(tf);
+
     bool fontShadowEnable =
         settings
             .value("appearance/fontShadowEnable",
@@ -882,7 +915,10 @@ void MainWindow::onLearningModeStateChanged(LearningMode::State state) {
         ui->hintLabel->setVisible(false);
         break;
     case LearningMode::HintShowing:
-        ui->hintLabel->setText("▸ press T to check");
+        ui->hintLabel->setText(
+            "<span style='color:rgba(180,180,180,180);'>▸ click here or press&nbsp;</span>"
+            "<span style='color:#FFD93D;font-weight:bold;'>T</span>"
+            "<span style='color:rgba(180,180,180,180);'>&nbsp;to reveal translation</span>");
         ui->hintLabel->setVisible(true);
         break;
     case LearningMode::Revealed:
@@ -953,46 +989,47 @@ QString MainWindow::applyVocabHighlights(const QString &html) {
     if (!vocabStore || vocabStore->words().isEmpty())
         return html;
 
-    QString result = html;
-
-    for (const VocabWord &w : vocabStore->words()) {
-        QString base = w.baseForm();
-        if (base.isEmpty())
-            continue;
-        QString color = VOCAB_COLORS[w.colorIndex % VOCAB_COLOR_COUNT];
-        // Match word boundaries, case-insensitive, outside HTML tags
-        // We process text nodes only (between > and <)
-        // Simple approach: regex on text between tags
-        QRegularExpression re(
-            "(?<=>|^)([^<]*)(?=<|$)",
-            QRegularExpression::MultilineOption);
-        auto it = re.globalMatch(result);
-        QVector<QPair<int, int>> replacements;
-        while (it.hasNext()) {
-            auto m = it.next();
-            QString textNode = m.captured(1);
-            QRegularExpression wordRe(
-                "\\b(" + QRegularExpression::escape(base) + ")\\b",
-                QRegularExpression::CaseInsensitiveOption);
-            if (wordRe.match(textNode).hasMatch()) {
-                replacements.prepend({m.capturedStart(1), m.capturedLength(1)});
-            }
+    // Tokenize into alternating text nodes and HTML tags
+    QRegularExpression tagRe("<[^>]+>");
+    QStringList parts;
+    QVector<bool> isTag;
+    int pos = 0;
+    auto it = tagRe.globalMatch(html);
+    while (it.hasNext()) {
+        auto m = it.next();
+        if (m.capturedStart() > pos) {
+            parts << html.mid(pos, m.capturedStart() - pos);
+            isTag << false;
         }
-        for (auto &rep : replacements) {
-            QString textNode = result.mid(rep.first, rep.second);
-            QRegularExpression wordRe(
-                "\\b(" + QRegularExpression::escape(base) + ")\\b",
-                QRegularExpression::CaseInsensitiveOption);
-            QString replaced = textNode.replace(
-                wordRe,
-                QString("<span style='border-bottom:2px solid %1;"
-                        "color:inherit;'>\\1</span>")
-                    .arg(color));
-            result = result.left(rep.first) + replaced +
-                     result.mid(rep.first + rep.second);
-        }
+        parts << m.captured();
+        isTag << true;
+        pos = m.capturedEnd();
     }
-    return result;
+    if (pos < html.length()) {
+        parts << html.mid(pos);
+        isTag << false;
+    }
+
+    // Replace word matches only in text nodes, leaving tags untouched
+    for (int i = 0; i < parts.size(); ++i) {
+        if (isTag[i])
+            continue;
+        QString text = parts[i];
+        for (const VocabWord &w : vocabStore->words()) {
+            QString base = w.baseForm();
+            if (base.isEmpty())
+                continue;
+            QString color = VOCAB_COLORS[w.colorIndex % VOCAB_COLOR_COUNT];
+            QRegularExpression wordRe(
+                "\\b(" + QRegularExpression::escape(base) + ")\\b",
+                QRegularExpression::CaseInsensitiveOption);
+            text.replace(wordRe,
+                QString("<span style='border-bottom:2px solid %1;"
+                        "color:inherit;'>\\1</span>").arg(color));
+        }
+        parts[i] = text;
+    }
+    return parts.join("");
 }
 
 void MainWindow::adjustVocabOpacity(double delta) {

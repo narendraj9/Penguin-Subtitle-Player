@@ -650,10 +650,13 @@
             </sizepolicy>
            </property>
            <property name="styleSheet">
-            <string notr="true">color: rgba(200,200,200,160); font-size: 13px; background: transparent;</string>
+            <string notr="true">font-size: 13px; background: rgba(0,0,0,60); padding: 2px 8px; border-radius: 3px;</string>
            </property>
            <property name="text">
-            <string>▸ press T to check</string>
+            <string/>
+           </property>
+           <property name="textFormat">
+            <enum>Qt::RichText</enum>
            </property>
            <property name="alignment">
             <set>Qt::AlignCenter</set>
@@ -672,7 +675,7 @@
             </sizepolicy>
            </property>
            <property name="styleSheet">
-            <string notr="true">color: #FFD93D; font-size: 16px; background: rgba(0,0,0,120); padding: 4px; border-radius: 4px;</string>
+            <string notr="true">color: #FFD93D; background: rgba(0,0,0,120); padding: 4px 8px; border-radius: 4px;</string>
            </property>
            <property name="text">
             <string/>
