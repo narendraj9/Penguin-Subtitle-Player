@@ -13,6 +13,7 @@
 #include <QSet>
 #include <QSettings>
 #include <QString>
+#include <QStringList>
 #include <QSystemTrayIcon>
 #include <QTimer>
 
@@ -86,7 +87,9 @@ private:
     void adjustVocabOpacity(double delta);
     void loadVocabFileFromSettings();
     void updateLearningButtons();
-    void requestLlmVocabulary(const QString &subtitleText);
+    void requestLlmVocabulary(const QString &subtitleText,
+                              const QStringList &contextLines = QStringList());
+    void prefetchLlmVocabulary();
     void onLlmVocabularyReply(QNetworkReply *reply);
     void refreshDisplayedSubtitle();
 

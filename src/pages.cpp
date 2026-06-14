@@ -563,8 +563,9 @@ LearningPage::LearningPage(QWidget *parent, ConfigDialog *configDialog)
 
     QLabel *providerLabel = new QLabel(tr("Provider:"));
     apiProviderCombo = new QComboBox();
-    apiProviderCombo->addItem("Groq (llama-3.3-70b)");
-    apiProviderCombo->addItem("Cerebras (gpt-oss-120b)");
+    apiProviderCombo->addItem("OpenAI (gpt-4.1) — best quality");
+    apiProviderCombo->addItem("Groq (gpt-oss-120b) — biggest Groq model");
+    apiProviderCombo->addItem("Cerebras (gpt-oss-120b) — fast/free");
 
     QLabel *keyLabel = new QLabel(tr("API key:"));
     apiKeyEdit = new QLineEdit();
@@ -572,9 +573,9 @@ LearningPage::LearningPage(QWidget *parent, ConfigDialog *configDialog)
     apiKeyEdit->setPlaceholderText(tr("Paste your API key here"));
 
     QLabel *hintLabel = new QLabel(
-        tr("With an API key configured, the vocabulary panel can\n"
-           "auto-extract B1-level German words from the current subtitle.\n"
-           "Get a free key at console.groq.com or cloud.cerebras.ai"));
+        tr("With an API key configured, Penguin can auto-highlight\n"
+           "B1-level German words and show meanings for each subtitle.\n"
+           "Best quality: OpenAI gpt-4.1. Free/fast: Groq or Cerebras."));
     hintLabel->setStyleSheet("color: #777777; font-size: 11px;");
 
     QVBoxLayout *apiLayout = new QVBoxLayout();

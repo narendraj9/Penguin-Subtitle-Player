@@ -317,13 +317,13 @@ void MainWindow::update() {
         if (plain != m_lastSubtitleText) {
             learningMode->onSubtitleChanged(plain);
             m_lastSubtitleText = plain;
-            requestLlmVocabulary(plain);
+            prefetchLlmVocabulary();
         }
     } else {
         QString plain = htmlToPlainText(subtitleHtml);
         if (plain != m_lastSubtitleText) {
             m_lastSubtitleText = plain;
-            requestLlmVocabulary(plain);
+            prefetchLlmVocabulary();
         }
     }
 
@@ -352,7 +352,7 @@ void MainWindow::sliderMoved(int val) {
     QString plain = htmlToPlainText(subtitleHtml);
     if (plain != m_lastSubtitleText) {
         m_lastSubtitleText = plain;
-        requestLlmVocabulary(plain);
+        prefetchLlmVocabulary();
     }
     if (m_inlineHighlightsEnabled && !subtitleHtml.isEmpty())
         subtitleHtml = applyVocabHighlights(subtitleHtml);
@@ -537,7 +537,7 @@ void MainWindow::toggleInlineHighlights() {
     QString subtitleHtml = getSubtitle(true);
     QString plain = htmlToPlainText(subtitleHtml);
     m_lastSubtitleText = plain;
-    requestLlmVocabulary(plain);
+    prefetchLlmVocabulary();
 
     if (m_inlineHighlightsEnabled && !subtitleHtml.isEmpty())
         subtitleHtml = applyVocabHighlights(subtitleHtml);
@@ -903,6 +903,12 @@ void MainWindow::loadPref() {
             .arg(legendBgColor.green())
             .arg(legendBgColor.blue())
             .arg(legendBgAlpha));
+    // Reserve stable space for the LLM word→meaning legend so subtitles do not
+    // jump when words arrive asynchronously.
+    ui->legendLabel->setMinimumHeight(qMax(34, legendFontSize * 3));
+    if (ui->legendLabel->text().isEmpty())
+        ui->legendLabel->setText(" ");
+    ui->legendLabel->setVisible(m_inlineHighlightsEnabled);
 
     if (learningMode) {
         learningMode->setActive(m_learningModeEnabled);
@@ -973,7 +979,8 @@ void MainWindow::setup() {
     ui->subtitleLabel->setText("");
     ui->hintLabel->setVisible(false);
     ui->translationLabel->setVisible(false);
-    ui->legendLabel->setVisible(false);
+    ui->legendLabel->setText(" ");
+    ui->legendLabel->setVisible(m_inlineHighlightsEnabled);
     ui->timeLabel->setText(Engine::millisToTimeString(0) + " / " +
                            Engine::millisToTimeString(
                                engine->getFinishTime()));
@@ -1140,8 +1147,14 @@ void MainWindow::updateHighlights(const QString &subtitleHtml) {
 
 void MainWindow::updateLegend(const QString &subtitleHtml) {
     Q_UNUSED(subtitleHtml);
-    if (!m_inlineHighlightsEnabled || m_currentLlmWords.isEmpty()) {
+    if (!m_inlineHighlightsEnabled) {
         ui->legendLabel->setVisible(false);
+        return;
+    }
+
+    ui->legendLabel->setVisible(true);
+    if (m_currentLlmWords.isEmpty()) {
+        ui->legendLabel->setText(" ");
         return;
     }
 
@@ -1160,8 +1173,8 @@ void MainWindow::updateLegend(const QString &subtitleHtml) {
                     .arg(color, label.toHtmlEscaped(),
                          meaning.toHtmlEscaped());
     }
-    ui->legendLabel->setText(html.trimmed());
-    ui->legendLabel->setVisible(!html.trimmed().isEmpty());
+    QString trimmed = html.trimmed();
+    ui->legendLabel->setText(trimmed.isEmpty() ? " " : trimmed);
 }
 
 QString MainWindow::applyVocabHighlights(const QString &html) {
@@ -1230,19 +1243,24 @@ QString MainWindow::applyVocabHighlights(const QString &html) {
     return parts.join("");
 }
 
-void MainWindow::requestLlmVocabulary(const QString &subtitleText) {
+void MainWindow::requestLlmVocabulary(const QString &subtitleText,
+                                      const QStringList &contextLines) {
     QString text = subtitleText.trimmed();
+    bool isCurrentSubtitle = (text == m_lastSubtitleText.trimmed());
     if (text.isEmpty() || !m_inlineHighlightsEnabled) {
-        m_currentLlmWords.clear();
+        if (isCurrentSubtitle)
+            m_currentLlmWords.clear();
         return;
     }
 
     if (m_llmVocabCache.contains(text)) {
-        m_currentLlmWords = m_llmVocabCache.value(text);
+        if (isCurrentSubtitle)
+            m_currentLlmWords = m_llmVocabCache.value(text);
         return;
     }
 
-    m_currentLlmWords.clear();
+    if (isCurrentSubtitle)
+        m_currentLlmWords.clear();
     if (m_pendingVocabRequests.contains(text))
         return;
 
@@ -1253,18 +1271,50 @@ void MainWindow::requestLlmVocabulary(const QString &subtitleText) {
     }
 
     int providerIndex = settings.value("learning/apiProvider", 0).toInt();
-    const bool cerebras = providerIndex == 1;
-    QString endpoint = cerebras
-        ? "https://api.cerebras.ai/v1/chat/completions"
-        : "https://api.groq.com/openai/v1/chat/completions";
-    QString model = cerebras ? "gpt-oss-120b" : "llama-3.3-70b-versatile";
+    QString providerName;
+    QString endpoint;
+    QString model;
+    switch (providerIndex) {
+    case 1:
+        providerName = "groq";
+        endpoint = "https://api.groq.com/openai/v1/chat/completions";
+        // Biggest generally available Groq model.
+        model = "openai/gpt-oss-120b";
+        break;
+    case 2:
+        providerName = "cerebras";
+        endpoint = "https://api.cerebras.ai/v1/chat/completions";
+        model = "gpt-oss-120b";
+        break;
+    case 0:
+    default:
+        providerName = "openai";
+        endpoint = "https://api.openai.com/v1/chat/completions";
+        model = "gpt-4.1";
+        break;
+    }
+
+    QStringList context = contextLines;
+    context.removeAll(QString());
+    context.removeDuplicates();
+    if (context.isEmpty())
+        context << text;
+    QString contextBlock;
+    for (int i = 0; i < context.size(); ++i) {
+        const QString marker = (context[i].trimmed() == text) ? "  <-- TARGET" : "";
+        contextBlock += QString("%1. %2%3\n").arg(i + 1).arg(context[i], marker);
+    }
 
     QString prompt = QString(
         "You are a German language teacher preparing a student for the "
         "Goethe-Zertifikat B1.\n\n"
-        "Here is one German TV subtitle line the student is watching:\n"
-        "---\n%1\n---\n\n"
-        "Extract vocabulary this B1 learner would genuinely benefit from. "
+        "The student is watching German TV subtitles. Use the surrounding "
+        "subtitle context below to understand the scene, but extract words "
+        "ONLY from the TARGET subtitle line.\n\n"
+        "Subtitle context:\n---\n%2---\n\n"
+        "TARGET subtitle line:\n---\n%1\n---\n\n"
+        "Extract vocabulary from the TARGET line that this B1 learner would "
+        "genuinely benefit from. "
         "Be SELECTIVE — at most 4 items, only words that would appear on a B1 "
         "exam or cause real comprehension difficulty. Quality over quantity.\n\n"
         "For each word provide:\n"
@@ -1276,8 +1326,8 @@ void MainWindow::requestLlmVocabulary(const QString &subtitleText) {
         "- type: Gender (m/f/n) for nouns, or part of speech for others.\n"
         "- meaning: English meaning. Multiple senses separated by semicolons "
         "if relevant.\n"
-        "- example_de: The subtitle line above.\n"
-        "- example_en: English translation of that subtitle line.\n\n"
+        "- example_de: The TARGET subtitle line above.\n"
+        "- example_en: English translation of the TARGET subtitle line.\n\n"
         "SKIP A1/A2 basics, names, numbers, articles, pronouns, prepositions, "
         "modal verbs, common verbs, basic adjectives, and padding.\n\n"
         "INCLUDE genuinely B1-level prefix/separable verbs, useful "
@@ -1288,7 +1338,7 @@ void MainWindow::requestLlmVocabulary(const QString &subtitleText) {
         "\"type\":\"...\",\"meaning\":\"...\","
         "\"example_de\":\"...\",\"example_en\":\"...\"}]}\n\n"
         "If there is nothing useful at B1 level, return {\"words\":[]}.")
-                         .arg(text);
+                         .arg(text, contextBlock);
 
     QJsonObject body;
     body["model"] = model;
@@ -1312,8 +1362,39 @@ void MainWindow::requestLlmVocabulary(const QString &subtitleText) {
         req, QJsonDocument(body).toJson(QJsonDocument::Compact));
     reply->setProperty("subtitleText", text);
     m_pendingVocabRequests.insert(text);
-    logLearningDebug(QString("LLM vocabulary request: provider=%1 subtitle='%2'")
-                         .arg(cerebras ? "cerebras" : "groq", text.left(80)));
+    logLearningDebug(QString("LLM vocabulary request: provider=%1 model=%2 subtitle='%3'")
+                         .arg(providerName, model, text.left(80)));
+}
+
+void MainWindow::prefetchLlmVocabulary() {
+    if (!engine || !m_inlineHighlightsEnabled)
+        return;
+
+    QStringList context;
+    auto addSubtitleAt = [&](long long time) {
+        QString sub = htmlToPlainText(engine->peekSubtitle(time)).trimmed();
+        if (!sub.isEmpty() && !context.contains(sub))
+            context << sub;
+    };
+
+    // Previous/current/next few lines give the model scene context and hide
+    // latency for upcoming subtitles.
+    addSubtitleAt(engine->getTimeWithSubtitleOffset(currentTime, -1));
+    addSubtitleAt(currentTime);
+    for (int offset = 1; offset <= 4; ++offset)
+        addSubtitleAt(engine->getTimeWithSubtitleOffset(currentTime, offset));
+
+    QString current = m_lastSubtitleText.trimmed();
+    if (!current.isEmpty()) {
+        requestLlmVocabulary(current, context);
+        if (m_llmVocabCache.contains(current))
+            m_currentLlmWords = m_llmVocabCache.value(current);
+    }
+
+    for (const QString &line : context) {
+        if (line != current)
+            requestLlmVocabulary(line, context);
+    }
 }
 
 void MainWindow::onLlmVocabularyReply(QNetworkReply *reply) {
