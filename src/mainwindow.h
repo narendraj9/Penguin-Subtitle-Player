@@ -5,8 +5,12 @@
 #include "learningmode.h"
 #include "vocabpanel.h"
 #include "vocabstore.h"
+#include <QHash>
 #include <QKeyEvent>
 #include <QMainWindow>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QSet>
 #include <QSettings>
 #include <QString>
 #include <QSystemTrayIcon>
@@ -81,6 +85,10 @@ private:
     QString applyVocabHighlights(const QString &html);
     void adjustVocabOpacity(double delta);
     void loadVocabFileFromSettings();
+    void updateLearningButtons();
+    void requestLlmVocabulary(const QString &subtitleText);
+    void onLlmVocabularyReply(QNetworkReply *reply);
+    void refreshDisplayedSubtitle();
 
     Ui::MainWindow *ui;
 
@@ -111,6 +119,11 @@ private:
     QTimer *m_ctrlXTimer = nullptr;
 
     QString m_lastSubtitleText;
+
+    QNetworkAccessManager *m_vocabNetwork = nullptr;
+    QHash<QString, QVector<VocabWord>> m_llmVocabCache;
+    QSet<QString> m_pendingVocabRequests;
+    QVector<VocabWord> m_currentLlmWords;
 
     friend class TestMainWindow;
 };

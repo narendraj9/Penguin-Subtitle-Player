@@ -46,6 +46,9 @@ const static int LEARNING_AUTO_HIDE_DELAY = 0; // 0 = stay visible
 
 // Vocabulary / inline highlights
 const static bool INLINE_HIGHLIGHTS_ENABLED = true;
+const static int INLINE_LEGEND_FONT_SIZE = 17; // was 11px; 50% larger by default
+const static unsigned int INLINE_LEGEND_BG_COLOR = 0x00000000;
+const static int INLINE_LEGEND_BG_ALPHA = 150;
 const static double VOCAB_PANEL_OPACITY = 0.92;
 
 // Translation subtitle font

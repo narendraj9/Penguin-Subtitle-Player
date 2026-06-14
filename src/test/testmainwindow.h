@@ -33,7 +33,10 @@ private slots:
     void testToggleLearningModeFlipsFlag();
 
     // Inline highlights
+    void testInlineHighlightsEnabledByDefault();
     void testInlineHighlightAddsSpanForKnownWord();
+    void testToggleInlineHighlightsRefreshesCurrentSubtitle();
+    void testCtrlXCtrlHTogglesInlineHighlights();
     void testHighlightDoesNotCorruptHtmlTagAttributes();
 
 private:

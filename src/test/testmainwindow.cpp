@@ -4,6 +4,7 @@
 #include "src/mainwindow.h"
 #include "src/vocabstore.h"
 #include "src/vocabword.h"
+#include <QApplication>
 #include <QFile>
 #include <QLabel>
 #include <QTextStream>
@@ -223,6 +224,19 @@ void TestMainWindow::testToggleLearningModeFlipsFlag() {
     QCOMPARE(w.m_learningModeEnabled, initial);
 }
 
+void TestMainWindow::testInlineHighlightsEnabledByDefault() {
+    QSettings s;
+    s.remove("learning/inlineHighlights");
+
+    MainWindow w;
+
+    QVERIFY(w.m_inlineHighlightsEnabled);
+    QCOMPARE(s.value("learning/inlineHighlights").toBool(), true);
+
+    // Keep the shared fixture default for following tests.
+    s.setValue("learning/inlineHighlights", true);
+}
+
 void TestMainWindow::testInlineHighlightAddsSpanForKnownWord() {
     MainWindow w;
     w.show();
@@ -244,6 +258,51 @@ void TestMainWindow::testInlineHighlightAddsSpanForKnownWord() {
     const QString text = subtitle->text();
     QVERIFY(text.contains("border-bottom")); // highlight span inserted
     QVERIFY(text.contains("Tag"));
+}
+
+void TestMainWindow::testToggleInlineHighlightsRefreshesCurrentSubtitle() {
+    MainWindow w;
+    w.show();
+    w.load(m_srtPath);
+
+    VocabWord word;
+    word.word      = "der Tag, -e";
+    word.type      = "m";
+    word.meaning   = "day";
+    word.exampleDe = "Heute ist ein schöner Tag.";
+    word.exampleEn = "Today is a beautiful day.";
+    w.vocabStore->addWord(word);
+
+    w.m_inlineHighlightsEnabled = false;
+    w.sliderMoved(2);
+
+    QLabel *subtitle = w.findChild<QLabel *>("subtitleLabel");
+    QLabel *legend   = w.findChild<QLabel *>("legendLabel");
+    QVERIFY(!subtitle->text().contains("border-bottom"));
+    QVERIFY(!legend->isVisible());
+
+    w.toggleInlineHighlights();
+    QVERIFY(w.m_inlineHighlightsEnabled);
+    QVERIFY(subtitle->text().contains("border-bottom"));
+    QVERIFY(legend->isVisible());
+    QVERIFY(legend->text().contains("day"));
+
+    w.toggleInlineHighlights();
+    QVERIFY(!w.m_inlineHighlightsEnabled);
+    QVERIFY(!subtitle->text().contains("border-bottom"));
+    QVERIFY(!legend->isVisible());
+}
+
+void TestMainWindow::testCtrlXCtrlHTogglesInlineHighlights() {
+    MainWindow w;
+    w.m_inlineHighlightsEnabled = true;
+
+    QKeyEvent ctrlX(QEvent::KeyPress, Qt::Key_X, Qt::ControlModifier);
+    QApplication::sendEvent(&w, &ctrlX);
+    QKeyEvent ctrlH(QEvent::KeyPress, Qt::Key_H, Qt::ControlModifier);
+    QApplication::sendEvent(&w, &ctrlH);
+
+    QVERIFY(!w.m_inlineHighlightsEnabled);
 }
 
 void TestMainWindow::testHighlightDoesNotCorruptHtmlTagAttributes() {

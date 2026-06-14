@@ -5,6 +5,7 @@
 
 struct VocabWord {
     QString word;       // e.g. "die Möglichkeit, -en"
+    QString surface;    // exact word/phrase as it appears in the subtitle
     QString type;       // "f", "m", "n", "v", "adj", …
     QString meaning;    // English meaning
     QString exampleDe;  // German example sentence
@@ -23,6 +24,11 @@ struct VocabWord {
             w.startsWith("Der ") || w.startsWith("Das "))
             w = w.mid(4);
         return w.trimmed();
+    }
+
+    QString matchText() const {
+        QString s = surface.trimmed();
+        return s.isEmpty() ? baseForm() : s;
     }
 };
 

@@ -22,6 +22,7 @@ bool VocabStore::loadFromFile(const QString &path) {
         QJsonObject obj = v.toObject();
         VocabWord w;
         w.word = obj["word"].toString();
+        w.surface = obj["surface"].toString();
         w.type = obj["type"].toString();
         w.meaning = obj["meaning"].toString();
         w.exampleDe = obj["example_de"].toString();
@@ -43,6 +44,7 @@ bool VocabStore::saveToFile(const QString &path) const {
     for (const VocabWord &w : m_words) {
         QJsonObject obj;
         obj["word"] = w.word;
+        obj["surface"] = w.surface;
         obj["type"] = w.type;
         obj["meaning"] = w.meaning;
         obj["example_de"] = w.exampleDe;
@@ -102,7 +104,7 @@ void VocabStore::clear() {
 
 bool VocabStore::wordMatchesSubtitle(const VocabWord &w,
                                      const QString &plain) const {
-    QString base = w.baseForm();
+    QString base = w.matchText();
     if (base.isEmpty())
         return false;
     QRegularExpression re("\\b" + QRegularExpression::escape(base) + "\\b",

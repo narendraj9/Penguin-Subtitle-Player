@@ -2,10 +2,12 @@
 #include "QAction"
 #include "QByteArray"
 #include "QDebug"
+#include "QDateTime"
 #include "QDesktopWidget"
 #include "QDir"
 #include "QDragEnterEvent"
 #include "QDropEvent"
+#include "QFile"
 #include "QFileDialog"
 #include "QGraphicsDropShadowEffect"
 #include "QIcon"
@@ -16,13 +18,19 @@
 #include "QMenu"
 #include "QMessageBox"
 #include "QMimeData"
+#include "QJsonArray"
+#include "QJsonDocument"
+#include "QJsonObject"
 #include "QMouseEvent"
+#include "QNetworkRequest"
 #include "QObject"
 #include "QPainter"
 #include "QSizeGrip"
 #include "QString"
 #include "QStyle"
+#include "QStandardPaths"
 #include "QTextCodec"
+#include "QTextStream"
 #include "QTimer"
 #include "chardet.h"
 #include "cmath"
@@ -36,6 +44,78 @@
 #include "ui_mainwindow.h"
 #include <QKeyEvent>
 #include <QRegularExpression>
+#include <QSet>
+
+namespace {
+QString learningDebugLogPath() {
+    QString dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    if (dir.isEmpty())
+        dir = QDir::tempPath();
+    QDir().mkpath(dir);
+    return dir + QDir::separator() + "learning-shortcuts.log";
+}
+
+QString modifiersToString(Qt::KeyboardModifiers modifiers) {
+    QStringList parts;
+    if (modifiers & Qt::ControlModifier)
+        parts << "Ctrl";
+    if (modifiers & Qt::ShiftModifier)
+        parts << "Shift";
+    if (modifiers & Qt::AltModifier)
+        parts << "Alt";
+    if (modifiers & Qt::MetaModifier)
+        parts << "Meta";
+    if (modifiers & Qt::KeypadModifier)
+        parts << "Keypad";
+    if (modifiers & Qt::GroupSwitchModifier)
+        parts << "GroupSwitch";
+    return parts.isEmpty() ? "None" : parts.join("+");
+}
+
+QString shortMeaning(const QString &s) {
+    QString first = s.split(';').value(0).trimmed();
+    return first.length() > 28 ? first.left(26) + QString::fromUtf8("…")
+                               : first;
+}
+
+QString vocabBaseWord(QString word) {
+    word = word.trimmed();
+    word.remove(QRegularExpression("^(der|die|das|ein|eine)\\s+",
+                                   QRegularExpression::CaseInsensitiveOption));
+    return word.split(QRegularExpression("[,\\s]")).value(0).toLower().trimmed();
+}
+
+QString germanStem(QString word) {
+    QString stem = word.toLower().trimmed();
+    if (stem.length() < 5)
+        return stem;
+    stem.remove(QRegularExpression("^ge"));
+    stem.remove(QRegularExpression("(ungen|ieren|schaft|keit|heit|ness|lich|isch|bar|sam|los)$"));
+    stem.remove(QRegularExpression("(en|er|em|es|st|te|et|el|nd)$"));
+    stem.remove(QRegularExpression("[tes]$"));
+    return stem.length() >= 4 ? stem : word.toLower();
+}
+
+void logLearningDebug(const QString &message) {
+    const QString line = QString("[%1] %2")
+                             .arg(QDateTime::currentDateTime().toString(
+                                      Qt::ISODateWithMs),
+                                  message);
+    qDebug().noquote() << line;
+
+    QFile file(learningDebugLogPath());
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
+        return;
+    QTextStream out(&file);
+    out << line << '\n';
+}
+
+QString htmlToPlainText(QString text) {
+    text.remove(QRegularExpression("<[^>]*>"));
+    return text;
+}
+
+} // namespace
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), ui(new Ui::MainWindow), timer(new QTimer(this)) {
@@ -61,6 +141,12 @@ MainWindow::MainWindow(QWidget *parent)
             SIGNAL(customContextMenuRequested(const QPoint &)), this,
             SLOT(showToggleContextMenu(const QPoint &)));
     connect(ui->loadButton, SIGNAL(clicked()), this, SLOT(openFileDialog()));
+    connect(ui->learningModeButton, &QPushButton::clicked, this,
+            &MainWindow::toggleLearningMode);
+    connect(ui->inlineHighlightsButton, &QPushButton::clicked, this,
+            &MainWindow::toggleInlineHighlights);
+    connect(ui->vocabPanelButton, &QPushButton::clicked, this,
+            &MainWindow::toggleVocabPanel);
     connect(ui->prefButton, SIGNAL(clicked()), this,
             SLOT(openSettingsWindow()));
     connect(ui->quitButton, SIGNAL(clicked()), qApp, SLOT(quit()));
@@ -135,8 +221,13 @@ MainWindow::MainWindow(QWidget *parent)
 
     // --- ARD-parity setup ---
 
-    // Vocab store (must be before learningMode connects)
+    // Vocab store (still supported for manual imports, but LLM extraction is
+    // now the default vocabulary source for inline meanings/highlights).
     vocabStore = new VocabStore(this);
+
+    m_vocabNetwork = new QNetworkAccessManager(this);
+    connect(m_vocabNetwork, &QNetworkAccessManager::finished, this,
+            &MainWindow::onLlmVocabularyReply);
 
     // Learning mode
     learningMode = new LearningMode(this);
@@ -167,6 +258,13 @@ MainWindow::MainWindow(QWidget *parent)
     setAcceptDrops(true);
 
     loadVocabFileFromSettings();
+    updateLearningButtons();
+    logLearningDebug(QString("MainWindow ready. learning=%1 inlineHighlights=%2 "
+                             "vocabWords=%3 log=%4")
+                         .arg(m_learningModeEnabled)
+                         .arg(m_inlineHighlightsEnabled)
+                         .arg(vocabStore ? vocabStore->count() : 0)
+                         .arg(learningDebugLogPath()));
 }
 
 MainWindow::~MainWindow() {
@@ -219,6 +317,13 @@ void MainWindow::update() {
         if (plain != m_lastSubtitleText) {
             learningMode->onSubtitleChanged(plain);
             m_lastSubtitleText = plain;
+            requestLlmVocabulary(plain);
+        }
+    } else {
+        QString plain = htmlToPlainText(subtitleHtml);
+        if (plain != m_lastSubtitleText) {
+            m_lastSubtitleText = plain;
+            requestLlmVocabulary(plain);
         }
     }
 
@@ -244,6 +349,11 @@ void MainWindow::sliderMoved(int val) {
         return;
     currentTime = val * SLIDER_RATIO;
     QString subtitleHtml = getSubtitle(true);
+    QString plain = htmlToPlainText(subtitleHtml);
+    if (plain != m_lastSubtitleText) {
+        m_lastSubtitleText = plain;
+        requestLlmVocabulary(plain);
+    }
     if (m_inlineHighlightsEnabled && !subtitleHtml.isEmpty())
         subtitleHtml = applyVocabHighlights(subtitleHtml);
     ui->subtitleLabel->setText(subtitleHtml);
@@ -367,8 +477,10 @@ void MainWindow::revealTranslation() {
 }
 
 void MainWindow::toggleVocabPanel() {
-    if (!vocabPanel)
+    if (!vocabPanel) {
+        logLearningDebug("toggleVocabPanel ignored: vocabPanel is null");
         return;
+    }
     if (vocabPanel->isVisible()) {
         vocabPanel->hide();
     } else {
@@ -376,14 +488,23 @@ void MainWindow::toggleVocabPanel() {
         vocabPanel->show();
         vocabPanel->raise();
     }
+    updateLearningButtons();
+    logLearningDebug(QString("toggleVocabPanel: visible=%1 words=%2")
+                         .arg(vocabPanel->isVisible())
+                         .arg(vocabStore ? vocabStore->count() : 0));
 }
 
 void MainWindow::toggleLearningMode() {
+    const bool oldValue = m_learningModeEnabled;
     m_learningModeEnabled = !m_learningModeEnabled;
     settings.setValue("learning/enabled", m_learningModeEnabled);
     if (learningMode)
         learningMode->setActive(m_learningModeEnabled);
     updateTranslationDisplay();
+    updateLearningButtons();
+    logLearningDebug(QString("toggleLearningMode: %1 -> %2")
+                         .arg(oldValue)
+                         .arg(m_learningModeEnabled));
 
     // Brief toast-like update of hint
     QString modeText = m_learningModeEnabled
@@ -393,25 +514,48 @@ void MainWindow::toggleLearningMode() {
           "<span style='color:rgba(160,160,160,160);'>  (C-x l to enable learning)</span>";
     ui->hintLabel->setText(modeText);
     ui->hintLabel->setVisible(true);
-    QTimer::singleShot(2500, [this]() {
-        bool keepHint = learningMode &&
-                        learningMode->state() == LearningMode::HintShowing;
-        if (keepHint) {
-            ui->hintLabel->setText(
-                "<span style='color:rgba(180,180,180,180);'>▸ click here or press&nbsp;</span>"
-                "<span style='color:#FFD93D;font-weight:bold;'>T</span>"
-                "<span style='color:rgba(180,180,180,180);'>&nbsp;to reveal translation</span>");
-        } else {
-            ui->hintLabel->setVisible(false);
-        }
-    });
+    QTimer::singleShot(2500, [this]() { ui->hintLabel->setVisible(false); });
 }
 
 void MainWindow::toggleInlineHighlights() {
+    const bool oldValue = m_inlineHighlightsEnabled;
     m_inlineHighlightsEnabled = !m_inlineHighlightsEnabled;
     settings.setValue("learning/inlineHighlights", m_inlineHighlightsEnabled);
-    ui->legendLabel->setVisible(m_inlineHighlightsEnabled &&
-                                !ui->legendLabel->text().isEmpty());
+
+    // Re-render the currently displayed subtitle immediately.  Previously the
+    // shortcut only changed the flag, so a paused subtitle kept its old text
+    // until the timer/slider caused another refresh.
+    if (!engine) {
+        ui->legendLabel->setVisible(false);
+        updateLearningButtons();
+        logLearningDebug(QString("toggleInlineHighlights: %1 -> %2; no engine")
+                             .arg(oldValue)
+                             .arg(m_inlineHighlightsEnabled));
+        return;
+    }
+
+    QString subtitleHtml = getSubtitle(true);
+    QString plain = htmlToPlainText(subtitleHtml);
+    m_lastSubtitleText = plain;
+    requestLlmVocabulary(plain);
+
+    if (m_inlineHighlightsEnabled && !subtitleHtml.isEmpty())
+        subtitleHtml = applyVocabHighlights(subtitleHtml);
+
+    ui->subtitleLabel->setText(subtitleHtml);
+    updateLegend(subtitleHtml);
+
+    if (vocabPanel && vocabPanel->isVisible())
+        vocabPanel->setCurrentSubtitle(m_lastSubtitleText);
+
+    updateLearningButtons();
+    logLearningDebug(QString("toggleInlineHighlights: %1 -> %2; subtitle='%3' "
+                             "words=%4 legendVisible=%5")
+                         .arg(oldValue)
+                         .arg(m_inlineHighlightsEnabled)
+                         .arg(plain.left(80))
+                         .arg(vocabStore ? vocabStore->count() : 0)
+                         .arg(ui->legendLabel->isVisible()));
 }
 
 void MainWindow::showHelp() {
@@ -440,18 +584,7 @@ void MainWindow::loadTranslationFile() {
             ui->hintLabel->setText(
                 "<span style='color:#6BCB77;'>✓ Translation subtitle loaded</span>");
             ui->hintLabel->setVisible(true);
-            QTimer::singleShot(2000, [this]() {
-                bool keepHint = learningMode &&
-                                learningMode->state() == LearningMode::HintShowing;
-                if (keepHint) {
-                    ui->hintLabel->setText(
-                        "<span style='color:rgba(180,180,180,180);'>▸ click here or press&nbsp;</span>"
-                        "<span style='color:#FFD93D;font-weight:bold;'>T</span>"
-                        "<span style='color:rgba(180,180,180,180);'>&nbsp;to reveal translation</span>");
-                } else {
-                    ui->hintLabel->setVisible(false);
-                }
-            });
+            QTimer::singleShot(2000, [this]() { ui->hintLabel->setVisible(false); });
             return;
         } catch (const std::exception &e) {
             QMessageBox::critical(nullptr, "Error loading translation",
@@ -490,15 +623,26 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
         m_ctrlXTimer->stop();
         int key = ke->key();
         Qt::KeyboardModifiers mod = ke->modifiers();
+        logLearningDebug(QString("Ctrl+X chord second key: key=%1 text='%2' "
+                                 "modifiers=%3")
+                             .arg(key)
+                             .arg(ke->text())
+                             .arg(modifiersToString(mod)));
         if (key == Qt::Key_X && mod == Qt::ControlModifier) {
             toggleVocabPanel();
             return true;
         }
-        if (key == Qt::Key_L && (mod == Qt::NoModifier || mod == Qt::ShiftModifier)) {
+        if (key == Qt::Key_L &&
+            (mod == Qt::NoModifier || mod == Qt::ShiftModifier ||
+             mod == Qt::ControlModifier ||
+             mod == (Qt::ControlModifier | Qt::ShiftModifier))) {
             toggleLearningMode();
             return true;
         }
-        if (key == Qt::Key_H && (mod == Qt::NoModifier || mod == Qt::ShiftModifier)) {
+        if (key == Qt::Key_H &&
+            (mod == Qt::NoModifier || mod == Qt::ShiftModifier ||
+             mod == Qt::ControlModifier ||
+             mod == (Qt::ControlModifier | Qt::ShiftModifier))) {
             toggleInlineHighlights();
             return true;
         }
@@ -507,6 +651,11 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
             showHelp();
             return true;
         }
+        logLearningDebug(QString("Ctrl+X chord unhandled: key=%1 text='%2' "
+                                 "modifiers=%3")
+                             .arg(key)
+                             .arg(ke->text())
+                             .arg(modifiersToString(mod)));
         return false; // unknown chord
     }
 
@@ -514,6 +663,7 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event) {
     if (ke->key() == Qt::Key_X && ke->modifiers() == Qt::ControlModifier) {
         m_ctrlXPending = true;
         m_ctrlXTimer->start();
+        logLearningDebug("Ctrl+X prefix started");
         return true;
     }
 
@@ -721,16 +871,38 @@ void MainWindow::loadPref() {
     }
 
     // Learning mode prefs
-    m_learningModeEnabled =
-        settings
-            .value("learning/enabled",
-                   QVariant::fromValue(PrefConstants::LEARNING_MODE_ENABLED))
-            .toBool();
+    if (!settings.contains("learning/enabled"))
+        settings.setValue("learning/enabled",
+                          PrefConstants::LEARNING_MODE_ENABLED);
+    if (!settings.contains("learning/inlineHighlights"))
+        settings.setValue("learning/inlineHighlights",
+                          PrefConstants::INLINE_HIGHLIGHTS_ENABLED);
+
+    m_learningModeEnabled = settings.value("learning/enabled").toBool();
     m_inlineHighlightsEnabled =
+        settings.value("learning/inlineHighlights").toBool();
+
+    int legendFontSize = settings
+                             .value("learning/legendFontSize",
+                                    PrefConstants::INLINE_LEGEND_FONT_SIZE)
+                             .toInt();
+    QColor legendBgColor = QColor::fromRgb(
         settings
-            .value("learning/inlineHighlights",
-                   QVariant::fromValue(PrefConstants::INLINE_HIGHLIGHTS_ENABLED))
-            .toBool();
+            .value("learning/legendBgColor",
+                   QVariant::fromValue(PrefConstants::INLINE_LEGEND_BG_COLOR))
+            .toUInt());
+    int legendBgAlpha = settings
+                            .value("learning/legendBgAlpha",
+                                   PrefConstants::INLINE_LEGEND_BG_ALPHA)
+                            .toInt();
+    ui->legendLabel->setStyleSheet(
+        QString("color: white; font-size: %1px; background: rgba(%2,%3,%4,%5); "
+                "padding: 5px 12px; border-radius: 6px;")
+            .arg(legendFontSize)
+            .arg(legendBgColor.red())
+            .arg(legendBgColor.green())
+            .arg(legendBgColor.blue())
+            .arg(legendBgAlpha));
 
     if (learningMode) {
         learningMode->setActive(m_learningModeEnabled);
@@ -763,6 +935,14 @@ void MainWindow::loadPref() {
                              .toDouble();
         vocabPanel->setWindowOpacity(opacity);
     }
+
+    updateLearningButtons();
+    logLearningDebug(QString("loadPref: learning=%1 inlineHighlights=%2 "
+                             "knownWords=%3 recallSentences=%4")
+                         .arg(m_learningModeEnabled)
+                         .arg(m_inlineHighlightsEnabled)
+                         .arg(vocabStore ? vocabStore->knownWordsList().size() : 0)
+                         .arg(vocabStore ? vocabStore->recallSentencesList().size() : 0));
 }
 
 void MainWindow::load(QString path) {
@@ -915,11 +1095,8 @@ void MainWindow::onLearningModeStateChanged(LearningMode::State state) {
         ui->hintLabel->setVisible(false);
         break;
     case LearningMode::HintShowing:
-        ui->hintLabel->setText(
-            "<span style='color:rgba(180,180,180,180);'>▸ click here or press&nbsp;</span>"
-            "<span style='color:#FFD93D;font-weight:bold;'>T</span>"
-            "<span style='color:rgba(180,180,180,180);'>&nbsp;to reveal translation</span>");
-        ui->hintLabel->setVisible(true);
+        // Keep T reveal available, but do not show a persistent reminder.
+        ui->hintLabel->setVisible(false);
         break;
     case LearningMode::Revealed:
         ui->hintLabel->setVisible(false);
@@ -962,31 +1139,33 @@ void MainWindow::updateHighlights(const QString &subtitleHtml) {
 }
 
 void MainWindow::updateLegend(const QString &subtitleHtml) {
-    if (!m_inlineHighlightsEnabled || !vocabStore) {
-        ui->legendLabel->setVisible(false);
-        return;
-    }
-    QVector<VocabWord> active = vocabStore->wordsForSubtitle(subtitleHtml);
-    if (active.isEmpty()) {
+    Q_UNUSED(subtitleHtml);
+    if (!m_inlineHighlightsEnabled || m_currentLlmWords.isEmpty()) {
         ui->legendLabel->setVisible(false);
         return;
     }
 
     QString html;
-    for (const VocabWord &w : active) {
+    for (const VocabWord &w : m_currentLlmWords) {
         QString color = VOCAB_COLORS[w.colorIndex % VOCAB_COLOR_COUNT];
+        QString label = vocabBaseWord(w.word);
+        if (label.isEmpty())
+            label = w.word;
+        QString meaning = shortMeaning(w.meaning);
+        if (meaning.isEmpty())
+            continue;
         html += QString(
                     "<span style='color:%1;font-weight:bold;'>%2</span>"
-                    "<span style='color:#cccccc;'> = %3</span>  ")
-                    .arg(color, w.baseForm().toHtmlEscaped(),
-                         w.meaning.toHtmlEscaped());
+                    "<span style='color:#cccccc;'> → %3</span>  ")
+                    .arg(color, label.toHtmlEscaped(),
+                         meaning.toHtmlEscaped());
     }
     ui->legendLabel->setText(html.trimmed());
-    ui->legendLabel->setVisible(true);
+    ui->legendLabel->setVisible(!html.trimmed().isEmpty());
 }
 
 QString MainWindow::applyVocabHighlights(const QString &html) {
-    if (!vocabStore || vocabStore->words().isEmpty())
+    if (m_currentLlmWords.isEmpty())
         return html;
 
     // Tokenize into alternating text nodes and HTML tags
@@ -1015,21 +1194,182 @@ QString MainWindow::applyVocabHighlights(const QString &html) {
         if (isTag[i])
             continue;
         QString text = parts[i];
-        for (const VocabWord &w : vocabStore->words()) {
-            QString base = w.baseForm();
-            if (base.isEmpty())
-                continue;
-            QString color = VOCAB_COLORS[w.colorIndex % VOCAB_COLOR_COUNT];
-            QRegularExpression wordRe(
-                "\\b(" + QRegularExpression::escape(base) + ")\\b",
-                QRegularExpression::CaseInsensitiveOption);
-            text.replace(wordRe,
-                QString("<span style='border-bottom:2px solid %1;"
-                        "color:inherit;'>\\1</span>").arg(color));
+        QRegularExpression wordRe("[\\p{L}][\\p{L}'’\\-]*",
+                                  QRegularExpression::UseUnicodePropertiesOption);
+        QString out;
+        int pos = 0;
+        auto it = wordRe.globalMatch(text);
+        while (it.hasNext()) {
+            auto m = it.next();
+            out += text.mid(pos, m.capturedStart() - pos);
+            QString token = m.captured(0);
+            QString lower = token.toLower();
+            const VocabWord *match = nullptr;
+            for (const VocabWord &w : m_currentLlmWords) {
+                QString base = vocabBaseWord(w.word);
+                QString surface = w.surface.toLower().trimmed();
+                if ((!surface.isEmpty() && lower == surface) || lower == base ||
+                    (germanStem(lower).length() >= 3 &&
+                     germanStem(lower) == germanStem(base))) {
+                    match = &w;
+                    break;
+                }
+            }
+            if (match) {
+                QString color = VOCAB_COLORS[match->colorIndex % VOCAB_COLOR_COUNT];
+                out += QString("<span style='color:%1;font-weight:bold;'>%2</span>")
+                           .arg(color, token.toHtmlEscaped());
+            } else {
+                out += token;
+            }
+            pos = m.capturedEnd();
         }
-        parts[i] = text;
+        out += text.mid(pos);
+        parts[i] = out;
     }
     return parts.join("");
+}
+
+void MainWindow::requestLlmVocabulary(const QString &subtitleText) {
+    QString text = subtitleText.trimmed();
+    if (text.isEmpty() || !m_inlineHighlightsEnabled) {
+        m_currentLlmWords.clear();
+        return;
+    }
+
+    if (m_llmVocabCache.contains(text)) {
+        m_currentLlmWords = m_llmVocabCache.value(text);
+        return;
+    }
+
+    m_currentLlmWords.clear();
+    if (m_pendingVocabRequests.contains(text))
+        return;
+
+    QString apiKey = settings.value("learning/apiKey").toString().trimmed();
+    if (apiKey.isEmpty()) {
+        logLearningDebug("LLM vocabulary disabled: no API key configured");
+        return;
+    }
+
+    int providerIndex = settings.value("learning/apiProvider", 0).toInt();
+    const bool cerebras = providerIndex == 1;
+    QString endpoint = cerebras
+        ? "https://api.cerebras.ai/v1/chat/completions"
+        : "https://api.groq.com/openai/v1/chat/completions";
+    QString model = cerebras ? "gpt-oss-120b" : "llama-3.3-70b-versatile";
+
+    QString prompt = QString(
+        "You are a German language teacher preparing a student for the "
+        "Goethe-Zertifikat B1.\n\n"
+        "Here is one German TV subtitle line the student is watching:\n"
+        "---\n%1\n---\n\n"
+        "Extract vocabulary this B1 learner would genuinely benefit from. "
+        "Be SELECTIVE — at most 4 items, only words that would appear on a B1 "
+        "exam or cause real comprehension difficulty. Quality over quantity.\n\n"
+        "For each word provide:\n"
+        "- word: Canonical form. For nouns, ALWAYS use Goethe-Institut "
+        "style with article and plural form in parentheses, e.g. "
+        "\"der Mann (-\\\"er)\", \"die Bedeutung (-en)\", "
+        "\"das Ergebnis (-se)\". NEVER omit the article or plural.\n"
+        "- surface: The exact word form as it appears in the subtitle line.\n"
+        "- type: Gender (m/f/n) for nouns, or part of speech for others.\n"
+        "- meaning: English meaning. Multiple senses separated by semicolons "
+        "if relevant.\n"
+        "- example_de: The subtitle line above.\n"
+        "- example_en: English translation of that subtitle line.\n\n"
+        "SKIP A1/A2 basics, names, numbers, articles, pronouns, prepositions, "
+        "modal verbs, common verbs, basic adjectives, and padding.\n\n"
+        "INCLUDE genuinely B1-level prefix/separable verbs, useful "
+        "conjunctions/adverbs, abstract nouns, non-obvious compounds, idioms, "
+        "fixed collocations, false friends, and topic-specific vocabulary.\n\n"
+        "Return a JSON object with exactly this shape:\n"
+        "{\"words\":[{\"word\":\"...\",\"surface\":\"...\","
+        "\"type\":\"...\",\"meaning\":\"...\","
+        "\"example_de\":\"...\",\"example_en\":\"...\"}]}\n\n"
+        "If there is nothing useful at B1 level, return {\"words\":[]}.")
+                         .arg(text);
+
+    QJsonObject body;
+    body["model"] = model;
+    QJsonArray messages;
+    messages.append(QJsonObject{{"role", "system"},
+                                {"content", "You are a helpful German "
+                                            "language teaching assistant. "
+                                            "Always respond with valid JSON "
+                                            "only, no additional text."}});
+    messages.append(QJsonObject{{"role", "user"}, {"content", prompt}});
+    body["messages"] = messages;
+    body["temperature"] = 0.4;
+    body["max_tokens"] = 900;
+    body["response_format"] = QJsonObject{{"type", "json_object"}};
+
+    QNetworkRequest req{QUrl(endpoint)};
+    req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    req.setRawHeader("Authorization", ("Bearer " + apiKey).toUtf8());
+
+    QNetworkReply *reply = m_vocabNetwork->post(
+        req, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    reply->setProperty("subtitleText", text);
+    m_pendingVocabRequests.insert(text);
+    logLearningDebug(QString("LLM vocabulary request: provider=%1 subtitle='%2'")
+                         .arg(cerebras ? "cerebras" : "groq", text.left(80)));
+}
+
+void MainWindow::onLlmVocabularyReply(QNetworkReply *reply) {
+    QString subtitleText = reply->property("subtitleText").toString();
+    m_pendingVocabRequests.remove(subtitleText);
+
+    if (reply->error() != QNetworkReply::NoError) {
+        logLearningDebug(QString("LLM vocabulary error: %1").arg(reply->errorString()));
+        reply->deleteLater();
+        return;
+    }
+
+    QJsonDocument envelope = QJsonDocument::fromJson(reply->readAll());
+    reply->deleteLater();
+    QString content = envelope.object()["choices"].toArray()
+                          .at(0).toObject()["message"].toObject()["content"]
+                          .toString();
+    QJsonDocument payload = QJsonDocument::fromJson(content.toUtf8());
+    QJsonArray wordsJson = payload.object()["words"].toArray();
+
+    QVector<VocabWord> words;
+    for (const QJsonValue &value : wordsJson) {
+        QJsonObject obj = value.toObject();
+        VocabWord w;
+        w.word = obj["word"].toString();
+        w.surface = obj["surface"].toString();
+        w.type = obj["type"].toString();
+        w.meaning = obj["meaning"].toString();
+        w.exampleDe = obj["example_de"].toString(subtitleText);
+        w.exampleEn = obj["example_en"].toString();
+        w.colorIndex = words.size() % VOCAB_COLOR_COUNT;
+        if (!w.word.trimmed().isEmpty() && !w.meaning.trimmed().isEmpty())
+            words.append(w);
+    }
+
+    m_llmVocabCache.insert(subtitleText, words);
+    logLearningDebug(QString("LLM vocabulary reply: subtitle='%1' words=%2")
+                         .arg(subtitleText.left(80))
+                         .arg(words.size()));
+
+    if (subtitleText == m_lastSubtitleText) {
+        m_currentLlmWords = words;
+        refreshDisplayedSubtitle();
+    }
+}
+
+void MainWindow::refreshDisplayedSubtitle() {
+    if (!engine)
+        return;
+    QString subtitleHtml = getSubtitle(true);
+    if (m_inlineHighlightsEnabled && !subtitleHtml.isEmpty())
+        subtitleHtml = applyVocabHighlights(subtitleHtml);
+    ui->subtitleLabel->setText(subtitleHtml);
+    updateLegend(subtitleHtml);
+    if (vocabPanel && vocabPanel->isVisible())
+        vocabPanel->setCurrentSubtitle(m_lastSubtitleText);
 }
 
 void MainWindow::adjustVocabOpacity(double delta) {
@@ -1044,6 +1384,45 @@ void MainWindow::loadVocabFileFromSettings() {
     if (!vocabStore)
         return;
     QString path = settings.value("learning/vocabFile").toString();
-    if (!path.isEmpty() && QFile::exists(path))
-        vocabStore->loadFromFile(path);
+    if (!path.isEmpty() && QFile::exists(path)) {
+        const bool ok = vocabStore->loadFromFile(path);
+        logLearningDebug(QString("loadVocabFileFromSettings: path='%1' ok=%2 "
+                                 "words=%3")
+                             .arg(path)
+                             .arg(ok)
+                             .arg(vocabStore->count()));
+    } else {
+        logLearningDebug(QString("loadVocabFileFromSettings: no readable vocab "
+                                 "file configured. path='%1'")
+                             .arg(path));
+    }
+}
+
+void MainWindow::updateLearningButtons() {
+    auto applyToggleStyle = [](QPushButton *button, bool checked,
+                               const QString &onText,
+                               const QString &offText) {
+        if (!button)
+            return;
+        button->setChecked(checked);
+        button->setText(checked ? onText : offText);
+        button->setStyleSheet(
+            checked
+                ? "QPushButton { background: rgba(46,196,182,110); color: "
+                  "white; border: 1px solid rgba(46,196,182,210); "
+                  "border-radius: 4px; font-weight: bold; }"
+                  "QPushButton:hover { background: rgba(46,196,182,160); }"
+                : "QPushButton { background: rgba(40,40,40,100); color: "
+                  "#bbbbbb; border: 1px solid rgba(150,150,150,90); "
+                  "border-radius: 4px; }"
+                  "QPushButton:hover { background: rgba(80,80,80,140); "
+                  "color: white; }");
+    };
+
+    applyToggleStyle(ui->learningModeButton, m_learningModeEnabled, "Learn",
+                     "Passive");
+    applyToggleStyle(ui->inlineHighlightsButton, m_inlineHighlightsEnabled,
+                     "HL on", "HL off");
+    applyToggleStyle(ui->vocabPanelButton,
+                     vocabPanel && vocabPanel->isVisible(), "Words", "Words");
 }

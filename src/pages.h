@@ -88,12 +88,18 @@ public:
 
 public slots:
   void browseVocabFile();
+  void openLegendBgColorDialog();
 
 private:
+  void paintColorButton(QPushButton *button, QColor color);
+  QColor legendBgColor;
   QCheckBox *learningModeCbx;
   QSpinBox *thinkTimeSpinBox;
   QSpinBox *autoHideDelaySpinBox;
   QCheckBox *inlineHighlightsCbx;
+  QSpinBox *legendFontSizeSpinBox;
+  QSlider *legendBgAlphaSlider;
+  QPushButton *legendBgColorButton;
   QLineEdit *vocabFileEdit;
   QComboBox *apiProviderCombo;
   QLineEdit *apiKeyEdit;

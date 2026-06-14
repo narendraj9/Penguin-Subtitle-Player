@@ -151,6 +151,108 @@
           </widget>
          </item>
          <item>
+          <widget class="QPushButton" name="learningModeButton">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>64</width>
+             <height>42</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>64</width>
+             <height>42</height>
+            </size>
+           </property>
+           <property name="toolTip">
+            <string>Toggle learning/passive mode (Ctrl+X, Ctrl+L)</string>
+           </property>
+           <property name="text">
+            <string>Learn</string>
+           </property>
+           <property name="checkable">
+            <bool>true</bool>
+           </property>
+           <property name="flat">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="inlineHighlightsButton">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>52</width>
+             <height>42</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>52</width>
+             <height>42</height>
+            </size>
+           </property>
+           <property name="toolTip">
+            <string>Toggle inline word highlights and meaning legend (Ctrl+X, Ctrl+H)</string>
+           </property>
+           <property name="text">
+            <string>HL</string>
+           </property>
+           <property name="checkable">
+            <bool>true</bool>
+           </property>
+           <property name="flat">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="vocabPanelButton">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>64</width>
+             <height>42</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>64</width>
+             <height>42</height>
+            </size>
+           </property>
+           <property name="toolTip">
+            <string>Toggle vocabulary word/meaning panel (Ctrl+X, Ctrl+X)</string>
+           </property>
+           <property name="text">
+            <string>Words</string>
+           </property>
+           <property name="checkable">
+            <bool>true</bool>
+           </property>
+           <property name="flat">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
           <widget class="QWidget" name="topSpacer" native="true">
            <property name="sizePolicy">
             <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
@@ -703,7 +805,7 @@
             </sizepolicy>
            </property>
            <property name="styleSheet">
-            <string notr="true">color: white; font-size: 11px; background: rgba(0,0,0,100); padding: 3px 8px; border-radius: 3px;</string>
+            <string notr="true">color: white; font-size: 17px; background: rgba(0,0,0,150); padding: 5px 12px; border-radius: 6px;</string>
            </property>
            <property name="text">
             <string/>
