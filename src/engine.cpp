@@ -45,6 +45,14 @@ QString Engine::currentSubtitle(long long time, bool sliderMoved) {
   return subtitles[index].text;
 }
 
+QString Engine::peekSubtitle(long long time) {
+  int index = currentSubtitleIndex(time, true);
+  if (index < 0) {
+    return "";
+  }
+  return subtitles[index].text;
+}
+
 long long Engine::getTimeWithSubtitleOffset(long long time, int offset) {
   int index = currentSubtitleIndex(time, true);
   int targetIndex;

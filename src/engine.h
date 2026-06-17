@@ -62,6 +62,8 @@ public:
 
   // Fetch the suitable subtitle content for current time
   QString currentSubtitle(long long time, bool sliderMoved);
+  // Fetch subtitle without updating internal playback/search state.
+  QString peekSubtitle(long long time);
   long long getTimeWithSubtitleOffset(long long time, int offset);
   int currentSubtitleIndex(long long time, bool sliderMoved);
 

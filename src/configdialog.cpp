@@ -31,6 +31,7 @@ ConfigDialog::ConfigDialog() {
   pagesWidget = new QStackedWidget;
   pagesWidget->addWidget(new GeneralPage(pagesWidget, this));
   pagesWidget->addWidget(new AppearancePage(pagesWidget, this));
+  pagesWidget->addWidget(new LearningPage(pagesWidget, this));
   pagesWidget->addWidget(new AboutPage(pagesWidget, this));
 
   QPushButton *closeButton = new QPushButton(tr("Cancel"));
@@ -72,6 +73,11 @@ void ConfigDialog::createIcons() {
   appearanceItem->setText(tr("Appearance"));
   appearanceItem->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled);
   appearanceItem->setSizeHint(QSize(0, HEIGHT));
+
+  QListWidgetItem *learningItem = new QListWidgetItem(contentsWidget);
+  learningItem->setText(tr("Learning"));
+  learningItem->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled);
+  learningItem->setSizeHint(QSize(0, HEIGHT));
 
   QListWidgetItem *aboutItem = new QListWidgetItem(contentsWidget);
   aboutItem->setText(tr("About"));

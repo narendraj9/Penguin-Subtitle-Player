@@ -474,3 +474,210 @@ AboutPage::~AboutPage() {}
 
 void AboutPage::load() {}
 void AboutPage::save() {}
+
+// ---------- LearningPage ----------
+
+LearningPage::LearningPage(QWidget *parent, ConfigDialog *configDialog)
+    : PrefPage(parent, configDialog) {
+
+    QGroupBox *modeGroup = new QGroupBox(tr("Learning Mode"));
+
+    learningModeCbx = new QCheckBox(tr("Enable learning mode (hide translation until T is pressed)"));
+
+    QLabel *thinkTimeLabel = new QLabel(tr("Think time before hint (seconds, 0 = immediate):"));
+    thinkTimeSpinBox = new QSpinBox();
+    thinkTimeSpinBox->setRange(0, 60);
+    thinkTimeSpinBox->setSuffix(tr(" s"));
+
+    QLabel *autoHideLabel = new QLabel(tr("Auto-hide translation after reveal (seconds, 0 = stay visible):"));
+    autoHideDelaySpinBox = new QSpinBox();
+    autoHideDelaySpinBox->setRange(0, 120);
+    autoHideDelaySpinBox->setSuffix(tr(" s"));
+
+    QVBoxLayout *modeLayout = new QVBoxLayout();
+    modeLayout->addWidget(learningModeCbx);
+    QHBoxLayout *thinkRow = new QHBoxLayout();
+    thinkRow->addWidget(thinkTimeLabel);
+    thinkRow->addWidget(thinkTimeSpinBox);
+    thinkRow->addStretch(1);
+    modeLayout->addLayout(thinkRow);
+    QHBoxLayout *hideRow = new QHBoxLayout();
+    hideRow->addWidget(autoHideLabel);
+    hideRow->addWidget(autoHideDelaySpinBox);
+    hideRow->addStretch(1);
+    modeLayout->addLayout(hideRow);
+    modeGroup->setLayout(modeLayout);
+
+    QGroupBox *vocabGroup = new QGroupBox(tr("Vocabulary Highlights"));
+
+    inlineHighlightsCbx = new QCheckBox(tr("Show inline word highlights and colour legend"));
+
+    QLabel *legendFontSizeLabel = new QLabel(tr("Word meaning text size:"));
+    legendFontSizeSpinBox = new QSpinBox();
+    legendFontSizeSpinBox->setRange(8, 72);
+    legendFontSizeSpinBox->setSuffix(tr(" px"));
+
+    QLabel *legendBgColorLabel = new QLabel(tr("Word meaning background:"));
+    legendBgColorButton = new QPushButton();
+    legendBgColorButton->setFixedSize(42, 24);
+    connect(legendBgColorButton, SIGNAL(clicked()), this,
+            SLOT(openLegendBgColorDialog()));
+
+    QLabel *legendBgAlphaLabel = new QLabel(tr("Background opacity:"));
+    legendBgAlphaSlider = new QSlider(Qt::Horizontal);
+    legendBgAlphaSlider->setRange(0, 255);
+    legendBgAlphaSlider->setFixedWidth(140);
+
+    QLabel *vocabFileLabel = new QLabel(tr("Vocabulary file (vocab.json, optional):"));
+    vocabFileEdit = new QLineEdit();
+    vocabFileEdit->setPlaceholderText(tr("Path to vocab.json …"));
+    QPushButton *browseBtn = new QPushButton(tr("Browse"));
+    connect(browseBtn, SIGNAL(clicked()), this, SLOT(browseVocabFile()));
+
+    QHBoxLayout *fileRow = new QHBoxLayout();
+    fileRow->addWidget(vocabFileEdit, 1);
+    fileRow->addWidget(browseBtn);
+
+    QHBoxLayout *legendSizeRow = new QHBoxLayout();
+    legendSizeRow->addWidget(legendFontSizeLabel);
+    legendSizeRow->addWidget(legendFontSizeSpinBox);
+    legendSizeRow->addStretch(1);
+
+    QHBoxLayout *legendBgRow = new QHBoxLayout();
+    legendBgRow->addWidget(legendBgColorLabel);
+    legendBgRow->addWidget(legendBgColorButton);
+    legendBgRow->addSpacing(12);
+    legendBgRow->addWidget(legendBgAlphaLabel);
+    legendBgRow->addWidget(legendBgAlphaSlider);
+    legendBgRow->addStretch(1);
+
+    QVBoxLayout *vocabLayout = new QVBoxLayout();
+    vocabLayout->addWidget(inlineHighlightsCbx);
+    vocabLayout->addLayout(legendSizeRow);
+    vocabLayout->addLayout(legendBgRow);
+    vocabLayout->addWidget(vocabFileLabel);
+    vocabLayout->addLayout(fileRow);
+    vocabGroup->setLayout(vocabLayout);
+
+    QGroupBox *apiGroup = new QGroupBox(tr("Vocabulary Extraction API (optional)"));
+
+    QLabel *providerLabel = new QLabel(tr("Provider:"));
+    apiProviderCombo = new QComboBox();
+    apiProviderCombo->addItem("OpenAI (gpt-4.1) — best quality");
+    apiProviderCombo->addItem("Groq (gpt-oss-120b) — biggest Groq model");
+    apiProviderCombo->addItem("Cerebras (gpt-oss-120b) — fast/free");
+
+    QLabel *keyLabel = new QLabel(tr("API key:"));
+    apiKeyEdit = new QLineEdit();
+    apiKeyEdit->setEchoMode(QLineEdit::Password);
+    apiKeyEdit->setPlaceholderText(tr("Paste your API key here"));
+
+    QLabel *hintLabel = new QLabel(
+        tr("With an API key configured, Penguin can auto-highlight\n"
+           "B1-level German words and show meanings for each subtitle.\n"
+           "Best quality: OpenAI gpt-4.1. Free/fast: Groq or Cerebras."));
+    hintLabel->setStyleSheet("color: #777777; font-size: 11px;");
+
+    QVBoxLayout *apiLayout = new QVBoxLayout();
+    QHBoxLayout *provRow = new QHBoxLayout();
+    provRow->addWidget(providerLabel);
+    provRow->addWidget(apiProviderCombo);
+    provRow->addStretch(1);
+    apiLayout->addLayout(provRow);
+    QHBoxLayout *keyRow = new QHBoxLayout();
+    keyRow->addWidget(keyLabel);
+    keyRow->addWidget(apiKeyEdit, 1);
+    apiLayout->addLayout(keyRow);
+    apiLayout->addWidget(hintLabel);
+    apiGroup->setLayout(apiLayout);
+
+    QVBoxLayout *mainLayout = new QVBoxLayout();
+    mainLayout->addWidget(modeGroup);
+    mainLayout->addWidget(vocabGroup);
+    mainLayout->addWidget(apiGroup);
+    mainLayout->addStretch(1);
+    setLayout(mainLayout);
+
+    this->load();
+}
+
+void LearningPage::paintColorButton(QPushButton *button, QColor color) {
+    QPixmap px(16, 16);
+    px.fill(Qt::transparent);
+    QPainter pt(&px);
+    pt.setPen(Qt::black);
+    pt.setBrush(color);
+    pt.drawRect(0, 0, 15, 15);
+    button->setIcon(QIcon(px));
+}
+
+void LearningPage::load() {
+    learningModeCbx->setChecked(
+        settings.value("learning/enabled",
+                       QVariant::fromValue(PrefConstants::LEARNING_MODE_ENABLED))
+            .toBool());
+    thinkTimeSpinBox->setValue(
+        settings.value("learning/thinkTime",
+                       QVariant::fromValue(PrefConstants::LEARNING_THINK_TIME))
+            .toInt());
+    autoHideDelaySpinBox->setValue(
+        settings
+            .value("learning/autoHideDelay",
+                   QVariant::fromValue(PrefConstants::LEARNING_AUTO_HIDE_DELAY))
+            .toInt());
+    inlineHighlightsCbx->setChecked(
+        settings
+            .value("learning/inlineHighlights",
+                   QVariant::fromValue(PrefConstants::INLINE_HIGHLIGHTS_ENABLED))
+            .toBool());
+    legendFontSizeSpinBox->setValue(
+        settings
+            .value("learning/legendFontSize",
+                   QVariant::fromValue(PrefConstants::INLINE_LEGEND_FONT_SIZE))
+            .toInt());
+    legendBgColor = QColor::fromRgb(
+        settings
+            .value("learning/legendBgColor",
+                   QVariant::fromValue(PrefConstants::INLINE_LEGEND_BG_COLOR))
+            .toUInt());
+    paintColorButton(legendBgColorButton, legendBgColor);
+    legendBgAlphaSlider->setValue(
+        settings
+            .value("learning/legendBgAlpha",
+                   QVariant::fromValue(PrefConstants::INLINE_LEGEND_BG_ALPHA))
+            .toInt());
+    vocabFileEdit->setText(settings.value("learning/vocabFile").toString());
+    apiProviderCombo->setCurrentIndex(
+        settings.value("learning/apiProvider", 0).toInt());
+    apiKeyEdit->setText(settings.value("learning/apiKey").toString());
+}
+
+void LearningPage::save() {
+    settings.setValue("learning/enabled", learningModeCbx->isChecked());
+    settings.setValue("learning/thinkTime", thinkTimeSpinBox->value());
+    settings.setValue("learning/autoHideDelay", autoHideDelaySpinBox->value());
+    settings.setValue("learning/inlineHighlights", inlineHighlightsCbx->isChecked());
+    settings.setValue("learning/legendFontSize", legendFontSizeSpinBox->value());
+    settings.setValue("learning/legendBgColor", legendBgColor.rgb());
+    settings.setValue("learning/legendBgAlpha", legendBgAlphaSlider->value());
+    settings.setValue("learning/vocabFile", vocabFileEdit->text());
+    settings.setValue("learning/apiProvider", apiProviderCombo->currentIndex());
+    settings.setValue("learning/apiKey", apiKeyEdit->text());
+}
+
+void LearningPage::openLegendBgColorDialog() {
+    QColor color = QColorDialog::getColor(legendBgColor, this,
+                                          tr("Select word meaning background"));
+    if (color.isValid()) {
+        legendBgColor = color;
+        paintColorButton(legendBgColorButton, legendBgColor);
+    }
+}
+
+void LearningPage::browseVocabFile() {
+    QString path = QFileDialog::getOpenFileName(
+        this, tr("Select Vocabulary File"), "",
+        tr("JSON files (*.json);;All files (*)"));
+    if (!path.isEmpty())
+        vocabFileEdit->setText(path);
+}
